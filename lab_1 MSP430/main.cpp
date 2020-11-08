@@ -81,7 +81,7 @@ void make_p_box(uint8_t i, uint8_t text_or_key)
     uint8_t new_value = 0;
     if (text_or_key)
     {
-        new_value |= key[]
+        //new_value |= key[];
     }
 }
 
