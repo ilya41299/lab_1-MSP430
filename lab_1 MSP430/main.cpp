@@ -32,6 +32,13 @@
 #define LEDS_EN     (DC_EN | DC_A1 | DC_A0)
 #define BTNS_EN     (DC_EN)
 
+//исходные данные для S-box, P-box, LFSR, shift_n
+uint8_t P_box[8] = { 0x4, 0x0, 0x6, 0x1, 0x3, 0x5, 0x7, 0x2 };
+uint8_t S_box_high[16] = { 0xF, 0xD, 0x0, 0x6, 0x9, 0x5, 0xA, 0x1, 0x2, 0xB, 0x3, 0x8, 0xC, 0x7, 0xE, 0x4 };
+uint8_t S_box_low[16] = { 0x4, 0xF, 0x3, 0x6, 0xB, 0xC, 0x0, 0x9, 0x1, 0xA, 0x8, 0x5, 0xD, 0x7, 0xE, 0x2 };
+uint8_t LFSR[4] = { 0x8, 0x0, 0xA, 0xE };
+uint8_t shift_n = 0x7;
+
 
 uint8_t init_key[4] = {0, 0, 0, 0};     //исходный ключ
 uint8_t init_text[4] = { 0, 0, 0, 0};   //исходный текст
@@ -68,6 +75,25 @@ void indication(uint8_t data, uint8_t HG)
     P1DIR = 0b00000000;         //конфигурируем P1 на ввод данных с кнопок
 }
 
+//функция применения P-box. i - номер байта, text_or_key - 0 (text), 1 (key)
+void make_p_box(uint8_t i, uint8_t text_or_key)
+{
+    uint8_t new_value = 0;
+    if (text_or_key)
+    {
+        new_value |= key[]
+    }
+}
+
+void make_s_box()
+{
+
+}
+
+void make_LFSR()
+{
+
+}
 
 // обработчик прерываний порта P1
 #pragma vector=PORT1_VECTOR
@@ -141,6 +167,8 @@ __interrupt void PORT1_ISR(void)
     
     P1IFG = 0b00000000;      // опускаем флаг прерывания
 }
+
+
 
 void init() 
 {
