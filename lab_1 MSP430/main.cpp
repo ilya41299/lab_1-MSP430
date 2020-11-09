@@ -78,11 +78,30 @@ void indication(uint8_t data, uint8_t HG)
 //функция применения P-box. i - номер байта, text_or_key - 0 (text), 1 (key)
 void make_p_box(uint8_t i, uint8_t text_or_key)
 {
-    uint8_t new_value = 0;
+    uint8_t temp_value = 0;
+   
     if (text_or_key)
     {
-        //new_value |= key[];
+        temp_value = key[i];
+        key[i] = 0;
     }
+    else 
+    {
+        temp_value = text[i];
+        text[i] = 0;
+    }
+    temp_value = (
+            ((temp_value & 0b00000001) << P_box[0]) | (((temp_value & 0b00000010) >> 1) << P_box[1]) |
+            (((temp_value & 0b00000100) >> 2) << P_box[2]) | (((temp_value & 0b00001000) >> 3) << P_box[3]) |
+            (((temp_value & 0b00010000) >> 4) << P_box[4]) | (((temp_value & 0b00100000) >> 5) << P_box[5]) |
+            (((temp_value & 0b01000000) >> 6) << P_box[6]) | (((temp_value & 0b10000000) >> 7) << P_box[7])
+        );
+    if (text_or_key)
+    {
+        key[i] = temp_value;
+    }
+    else
+        text[i] = temp_value;
 }
 
 
