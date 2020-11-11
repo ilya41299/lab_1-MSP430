@@ -1,7 +1,7 @@
 #include <MSP430.h>
 #include <stdint.h>
 
-//объявление для режима шифрования
+//биты для выборки команд в режима шифрования
 #define NEXT_STEP       BIT7
 #define ENCRYPT_AGAIN   BIT6
 #define SHOW_TEXT       BIT5
@@ -11,22 +11,25 @@
 #define BYTE_1          BIT1
 #define BYTE_0          BIT0
 
+//биты для проверки режима индикации памяти (ключ/шифр текст)
 #define SHOW_TEXT_ACTIVE    BIT0
 #define SHOW_KEY_ACTIVE     BIT1
 
-
-
+//биты управления дешифратором
 #define DC_A0       BIT7
 #define DC_A1       BIT6
 #define DC_A2       BIT5
 #define DC_EN       BIT3
 
+//бит для проверки команды чтения байта
 #define WRITE_BYTE  BIT7
 
+//биты для выборки индикации данных (ключ/шифртекст) в режиме шифрования
 #define READ_TEXT   BIT0
 #define READ_KEY    BIT1
 #define ENCRYPT     BIT2
 
+//биты управления защелками
 #define SEG0_EN     (DC_EN | DC_A2)
 #define SEG1_EN     (DC_EN | DC_A2 | DC_A0)
 #define LEDS_EN     (DC_EN | DC_A1 | DC_A0)
@@ -36,7 +39,7 @@
 uint8_t P_box[8] = { 0x4, 0x0, 0x6, 0x1, 0x3, 0x5, 0x7, 0x2 };
 uint8_t S_box_high[16] = { 0xF, 0xD, 0x0, 0x6, 0x9, 0x5, 0xA, 0x1, 0x2, 0xB, 0x3, 0x8, 0xC, 0x7, 0xE, 0x4 };
 uint8_t S_box_low[16] = { 0x4, 0xF, 0x3, 0x6, 0xB, 0xC, 0x0, 0x9, 0x1, 0xA, 0x8, 0x5, 0xD, 0x7, 0xE, 0x2 };
-uint16_t LFSR = 0b0100010100000001;
+uint16_t LFSR = 0b1000000010101110;
 uint8_t shift_n = 0x7;
 
 
@@ -81,10 +84,10 @@ void indication(uint8_t data, uint8_t HG)
 
 void encrypt()
 {
-    //инициализируем ключ и текст для шифрования
-    counter_iter = 0;
+    counter_iter = 0;			//обнуляем счетчик итераций
     uint8_t i = 0;
-    indication(0b00000000, 3);
+    indication(0b00000000, 3);	//очищаем линейку светодиодов
+    //инициализируем ключ и текст для шифрования
     while (i < 4)
     {
         text[i] = init_text[i];
@@ -94,11 +97,8 @@ void encrypt()
     P1DIR &= 0b00000000;        //конфигурируем P1 на ввод для чтения
     P1IFG &= ~0b11111111;       //опускаем флаг прерывания
     P1IES |= 0b01111111;        //устанавливаем прерывание по положительному фронту
-
     P1IE |= 0b01111111;         //разрешаем прерывание на ножке с кнопкой SB1-SB8
-
 }
-
 
 //функция применения P-box. i - номер байта, text_or_key - 0 (text), 1 (key)
 void make_p_box(uint8_t* data)
@@ -111,38 +111,39 @@ void make_p_box(uint8_t* data)
         );
 }
 
-
+//функция применения S-box. data - байт для подстановки
 void make_s_box(uint8_t* data)
 {
     uint8_t low = *data & 0b00001111;   //выделяем младший полубайт
     uint8_t high = *data >> 4;          //выделяем старший полубайт
     low = S_box_low[low];               //применяем подстанувку к младшему полубайту
-    high = S_box_high[high];             //применяем подстанувку к старшему полубайту
+    high = S_box_high[high];            //применяем подстанувку к старшему полубайту
     *data = (high << 4) | low;          //записываем результат применения Sbox
 }
 
+//функция применения LFSR. high - старший байт, low - младший
 void make_LFSR(uint8_t* high, uint8_t* low)
 {
-    uint16_t reg = (*high << 8) | *low;
-    uint16_t sum = reg & LFSR;
-
-    uint16_t new_bit_15 = 0;
-
+    uint16_t reg = (*high << 8) | *low;		//получаем значение регистра
+    uint16_t sum = reg & LFSR;				//выделяем биты для суммировани по mod2
+    uint16_t new_bit_15 = 0;				//переменная для вычисления нового значения старшего бита при сдвиге
+    //находим новое значение бита
     while (sum)
     {
         new_bit_15 ^= sum & 0b00000001;
         sum = sum >> 1;
     }
-    reg = reg >> 1;
-    *low = reg & 0b0000000011111111;
-    *high = (reg >> 8) | (new_bit_15 << 7);
+    reg = reg >> 1;								//сдвигаем регистр
+    *low = reg & 0b0000000011111111;			//изменяем младший байт
+    *high = (reg >> 8) | (new_bit_15 << 7);		//изменяем старший байт
 }
 
 //функция циклического сдвига shift_t_k: 0 - text, 1 - key
 void make_shift(uint8_t shift_t_k)
 {
-    uint8_t shift_arr[4] = { 0, 0, 0, 0 };
-    uint8_t i = 0;
+    uint8_t shift_arr[4] = { 0, 0, 0, 0 };		//массив сдвигаемых данных
+    uint8_t i = 0;								//переменная для итераций
+    //инициализация массива (шифртекст/ключ по флагу shift_t_k)
     while (i < 4)
     {
         if (shift_t_k)
@@ -154,7 +155,7 @@ void make_shift(uint8_t shift_t_k)
             shift_arr[i] = text[i];
         i++;
     }
-
+    //получаем единую переменную для выполнения сдвига
     i = 1;
     uint32_t shift_data = 0;
     shift_data |= shift_arr[3];
@@ -164,22 +165,21 @@ void make_shift(uint8_t shift_t_k)
         shift_data |= shift_arr[3 - i];
         i++;
     }
-    // uint32_t shift_data = (shift_value[3] << 24) | (*shift_value[2] << 16) | (*shift_value[1] << 8) | *shift_value[0];
-    i = shift_n;
-    uint8_t new_bit_0 = 0;
-
+    i = shift_n;				//инициализируем число сдвигов
+    uint8_t new_bit_0 = 0;		//переменная для нового значения младшего бита
+    //выполняем циглические сдвиги
     while (i--)
     {
-        new_bit_0 = !!(shift_data & 0x80000000);
-        shift_data = shift_data << 1;
-        shift_data |= new_bit_0;
+        new_bit_0 = !!(shift_data & 0x80000000);	//вычисляем новое значение младшего бита
+        shift_data = shift_data << 1;				//сдвигаем регистр
+        shift_data |= new_bit_0;					//переносим старший бит в младший
     }
-
+    //разделяем конечное значение регистра на байты
     shift_arr[0] = shift_data & 0x000000FF;
     shift_arr[1] = (shift_data & 0x0000FF00) >> 8;
     shift_arr[2] = (shift_data & 0x00FF0000) >> 16;
     shift_arr[3] = (shift_data & 0xFF000000) >> 24;
-
+    //корректируем значение шифртекста/ключа по результату сдвига
     i = 0;
     while (i < 4)
     {
@@ -194,6 +194,7 @@ void make_shift(uint8_t shift_t_k)
     }
 }
 
+//функция суммирования по mod2 шифртекста с ключем
 void make_xor()
 {
     text[0] ^= key[0];
@@ -202,6 +203,7 @@ void make_xor()
     text[3] ^= key[3];
 }
 
+//функция сброса для выполнения шифрования с 0-го шага
 void reset()
 {
     //перенастраиваем индикаторы
@@ -219,7 +221,6 @@ void reset()
     //обновляем счетчик
     counter_iter = 0;
     text_key = 0b00000001;
-
 }
 
 // обработчик прерываний порта P1
@@ -228,70 +229,69 @@ __interrupt void PORT1_ISR(void)
 {
     //проверка, для выхода из режима индикации байта данных или ключа, если не нажади кнопку байта
 
-    //при появлении флага
+    //проверка команды записи байта текста в память в режиме чтения
     if ((P1IFG & WRITE_BYTE) && (read_encr & READ_TEXT))
     {
-        init_text[counter_iter] = (P1IN ^ 0b11111111) & 0b01111111;    //сохраняем считанный байт
-        indication(init_text[counter_iter], 3);         //выводим на светодиоды
-        counter_iter++;                                 //увеличиваем счетчик
+        init_text[counter_iter] = (P1IN ^ 0b11111111) & 0b01111111;		//сохраняем считанный байт
+        indication(init_text[counter_iter], 3);         				//выводим на светодиоды
+        counter_iter++;                                				    //увеличиваем счетчик
 
-
-        //после чтения данных переходим к чтению ключа
+        //проверка, для перехода после чтения данных к чтению ключа
         if (counter_iter == 4)
         {
-            counter_iter = 0;          //обнуляем счетчик
-            read_encr = 0b00000010;    //устанавливаем режим чтения ключа
+            counter_iter = 0;          			//обнуляем счетчик
+            read_encr = 0b00000010;    			//устанавливаем режим чтения ключа
             indication(HG[counter_iter], 1);    //выводим на ССИ HG1
         }
         else
-            indication(HG[counter_iter] & 0b01111111, 1);                //выводим на ССИ HG1
-        P2OUT = BTNS_EN;                                //разрешаем запись в регистр кнопок
+            indication(HG[counter_iter] & 0b01111111, 1);	//выводим на ССИ HG1
     }
+    //проверка команды записи байта ключа в память в режиме чтения
     else if ((P1IFG & WRITE_BYTE) && (read_encr & READ_KEY))
     {
-        init_key[counter_iter] = (P1IN ^ 0b11111111) & 0b01111111;    //сохраняем считанный байт
-        indication(init_key[counter_iter], 3);          //выводим на светодиоды
-        counter_iter++;                                 //увеличиваем счетчик
-
+        init_key[counter_iter] = (P1IN ^ 0b11111111) & 0b01111111;		//сохраняем считанный байт
+        indication(init_key[counter_iter], 3);          				//выводим на светодиоды
+        counter_iter++;                                 				//увеличиваем счетчик
 
         //после чтения ключа переходим к шифрованию
         if (counter_iter == 4)
         {
-            counter_iter = 0;          //обнуляем счетчик
-            read_encr = 0b00000100;    //устанавливаем режим шифрования
-            indication(0b00000000, 1); //отключаем индикацию ССИ HG1
-            indication(HG[0], 0); //выводим "0" на HG0
-            encrypt();              //настройка для шифрования
+            counter_iter = 0;          		//обнуляем счетчик
+            read_encr = 0b00000100;    		//устанавливаем режим шифрования
+            indication(0b00000000, 1);		//отключаем индикацию ССИ HG1
+            indication(HG[0], 0); 			//выводим "0" на HG0
+            encrypt();              		//настройка для шифрования
         }
         else
             indication(HG[counter_iter], 1);    //выводим на ССИ HG1
     }
     //для режима шифрования
-    //выполить следующую итерацию шифрования
     else
     {
+        //проверка для отключения режима индикации ключа, переход в режим индикации данных
         if ((text_key & (SHOW_KEY_ACTIVE | SHOW_TEXT_ACTIVE)) && !(P1IFG & (BYTE_0 | BYTE_1 | BYTE_2 | BYTE_3)))
         {
             text_key = 0b00000001;
             indication(0b00000000, 1); //отключаем индикацию ССИ HG1
             indication(0b00000000, 3); //отключаем индикацию LEDS
         }
+        //выполить следующую итерацию шифрования
         if (P1IFG & NEXT_STEP)
         {
+            //проверка на окончание шифрования
             if (counter_iter == 8)
             {
-                indication(HG[8], 0);
-                P1IFG = 0b00000000;
-                return;
+                indication(HG[8], 0);	//вывод на ССИ HG0 "0."
+                P1IFG = 0b00000000;		//сброс флагов прерывания
+                return;					//выход из подпрограммы прерывания
             }
             else
             {
-                counter_iter++;
-                indication((HG[counter_iter] & 0b01111111), 0);
+                counter_iter++;										//инкрементируем счетчик
+                indication((HG[counter_iter] & 0b01111111), 0);		//выод на ССИ HG0 значения раунда
             }
-
-
-            uint8_t i = 0;
+            //алгоритм раунда
+            uint8_t i = 0;		//переменная для итераций
             // P -> shift -> S (text)
             while (i < 4)
             {
@@ -326,7 +326,6 @@ __interrupt void PORT1_ISR(void)
         else if (P1IFG & SHOW_TEXT)
         {
             text_key = 0b00000001;
-
         }
         //активация индикации ключа
         else if (P1IFG & SHOW_KEY)
@@ -356,14 +355,10 @@ __interrupt void PORT1_ISR(void)
             }
         }
     }
-
-
-
     P1IFG = 0b00000000;      // опускаем флаг прерывания
 }
 
-
-
+//функция начальной инициализации при сигнале RESET
 void init()
 {
     //производим начальную инициализацию
@@ -396,22 +391,17 @@ void read_text_and_key()
     //подготавливаем микроконтроллер к чтению данных
     P1DIR &= 0b00000000;        //конфигурируем P1 на ввод для чтения
     read_encr = 0b00000001;     //устанавливаем флаг чтения
-    P1IES |= WRITE_BYTE;     //устанавливаем прерывание по положительному фронту
+    P1IES |= WRITE_BYTE;     	//устанавливаем прерывание по положительному фронту
     P1IFG &= ~WRITE_BYTE;       //опускаем флаг прерывания
     P1IE |= WRITE_BYTE;         //разрешаем прерывание на ножке с кнопкой SB1
     __enable_interrupt();       //разрешаем работу прерываний 
 }
 
-
-
+//главная функция
 int main(void)
 {
     init();                 //первичная инициализация
-    read_text_and_key();    //инициализация для чтения данных и ключа
-    //ждём окончания чтения данных и ключа
-    while (read_encr & (READ_KEY | READ_TEXT)) {
-    }
-    // encrypt();              //настройка для шифрования 
+    read_text_and_key();    //инициализация для чтения данных и ключа 
     while (1) {};
     return 0;
 }
